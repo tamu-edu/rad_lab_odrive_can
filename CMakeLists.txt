@@ -7,7 +7,10 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(hardware_interface REQUIRED)
+find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -33,13 +36,41 @@ ament_target_dependencies(odrive_can_node
 
 target_compile_features(odrive_can_node PRIVATE cxx_std_20)
 
+add_library(odrive_hardware_interface SHARED
+  src/odrive_hardware_interface.cpp
+)
+target_include_directories(odrive_hardware_interface
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(odrive_hardware_interface ${THIS_PACKAGE_INCLUDE_DEPENDS} hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+
+ament_export_targets(odrive_hardware_interfaceTargets HAS_LIBRARY_TARGET)
+ament_export_dependencies(${THIS_PACKAGE_INCLUDE_DEPENDS})
+
+pluginlib_export_plugin_description_file(hardware_interface odrive_hardware_interface.xml)
+
 install(
   TARGETS odrive_can_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(
+  TARGETS odrive_hardware_interface
+  EXPORT odrive_hardware_interfaceTargets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
+)
+
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target
