@@ -47,6 +47,7 @@ namespace odrive_hardware_interface
     double axis_pos_state_, axis_vel_state_, axis_eff_state_;
 
     uint16_t node_id_;
+    std::string can_interface_name_;
     SocketCanIntf can_intf_ = SocketCanIntf();
     EpollEventLoop event_loop_;
     std::thread event_loop_thread_;

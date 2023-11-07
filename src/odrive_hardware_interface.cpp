@@ -1,4 +1,5 @@
 #include "byte_swap.hpp"
+#include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "odrive_can/odrive_hardware_interface.hpp"
 #include "pluginlib/class_list_macros.hpp"
 
@@ -46,22 +47,92 @@ namespace odrive_hardware_interface
       return init_result;
     }
 
-    // TODO: set this proper
-    node_id_ = 0;
+    // Get parameters from URDF ros2_control macro
+    node_id_ = std::stoi(info_.hardware_parameters["node_id"]);
+    can_interface_name_ = info_.hardware_parameters["can_interface"];
+
+    // Make sure we only have one joint
+    if (info_.joints.size() != 1)
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Expected 1 joint, got: %li", info_.joints.size());
+      return CallbackReturn::ERROR;
+    }
+
+    // Make sure we have position, velocity, and torque command and state interface
+    auto &joint_cmd_IFs = info_.joints.front().command_interfaces;
+    auto &joint_state_IFs = info_.joints.front().state_interfaces;
+    auto interface_to_find = hardware_interface::HW_IF_POSITION;
+    auto find_interface = [&interface_to_find](hardware_interface::InterfaceInfo info)
+    {
+      return info.name == interface_to_find;
+    };
+
+    bool missing_interface = false;
+    std::string warning_msg = "Missing interfaces. Please add these to the ros2_control tag of your URDF:\n";
+
+    // Search for position interfaces
+    auto it = std::find_if(joint_cmd_IFs.begin(), joint_cmd_IFs.end(), find_interface);
+    if (it == joint_cmd_IFs.end())
+    {
+      missing_interface = true;
+      warning_msg += "Command Interface: position\n";
+    }
+    it = std::find_if(joint_state_IFs.begin(), joint_state_IFs.end(), find_interface);
+    if (it == joint_state_IFs.end())
+    {
+      missing_interface = true;
+      warning_msg += "State Interface: position\n";
+    }
+
+    // Search for velocity interfaces
+    interface_to_find = hardware_interface::HW_IF_VELOCITY;
+    it = std::find_if(joint_cmd_IFs.begin(), joint_cmd_IFs.end(), find_interface);
+    if (it == joint_cmd_IFs.end())
+    {
+      missing_interface = true;
+      warning_msg += "Command Interface: velocity\n";
+    }
+    it = std::find_if(joint_state_IFs.begin(), joint_state_IFs.end(), find_interface);
+    if (it == joint_state_IFs.end())
+    {
+      missing_interface = true;
+      warning_msg += "State Interface: velocity\n";
+    }
+
+    // Search for effort interfaces
+    interface_to_find = hardware_interface::HW_IF_EFFORT;
+    it = std::find_if(joint_cmd_IFs.begin(), joint_cmd_IFs.end(), find_interface);
+    if (it == joint_cmd_IFs.end())
+    {
+      missing_interface = true;
+      warning_msg += "Command Interface: effort\n";
+    }
+    it = std::find_if(joint_state_IFs.begin(), joint_state_IFs.end(), find_interface);
+    if (it == joint_state_IFs.end())
+    {
+      missing_interface = true;
+      warning_msg += "State Interface: effort\n";
+    }
+
+    if (missing_interface)
+    {
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("NODE_NAME_TODO"), warning_msg);
+      return CallbackReturn::ERROR;
+    }
 
     return CallbackReturn::SUCCESS;
   }
 
   CallbackReturn ODriveHardwareInterface::on_configure(const rclcpp_lifecycle::State &previous_state)
   {
-    // TODO: read can interface from params
-    if (!can_intf_.init("can0", &event_loop_, std::bind(&ODriveHardwareInterface::read_can_bus, this, _1)))
+    if (!can_intf_.init(can_interface_name_, &event_loop_, std::bind(&ODriveHardwareInterface::read_can_bus, this, _1)))
     {
-      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to initialize socket can interface: can0");
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to initialize socket can interface: " << can_interface_name_);
       return CallbackReturn::ERROR;
     }
 
-    event_loop_thread_ = std::thread([this]() { event_loop_.run_until_empty(); });
+    event_loop_thread_ = std::thread([this]()
+                                     { event_loop_.run_until_empty(); });
 
     return CallbackReturn::SUCCESS;
   }
@@ -77,10 +148,11 @@ namespace odrive_hardware_interface
   {
     std::vector<hardware_interface::StateInterface> state_interfaces;
 
-    // TODO: un-hardcode joint name
-    state_interfaces.emplace_back(hardware_interface::StateInterface("joint1", "position", &axis_pos_state_));
-    state_interfaces.emplace_back(hardware_interface::StateInterface("joint1", "velocity", &axis_vel_state_));
-    state_interfaces.emplace_back(hardware_interface::StateInterface("joint1", "effort", &axis_eff_state_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_POSITION, &axis_pos_state_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_VELOCITY, &axis_vel_state_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_EFFORT, &axis_eff_state_));
+
+    // TODO: add other data from odrive (voltage, temp, errors)
 
     return state_interfaces;
   }
@@ -89,10 +161,9 @@ namespace odrive_hardware_interface
   {
     std::vector<hardware_interface::CommandInterface> command_interfaces;
 
-    // TODO: un-hardcode joint name
-    command_interfaces.emplace_back(hardware_interface::CommandInterface("joint1", "position", &axis_pos_cmd_));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface("joint1", "velocity", &axis_vel_cmd_));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface("joint1", "effort", &axis_eff_cmd_));
+    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_POSITION, &axis_pos_cmd_));
+    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_VELOCITY, &axis_vel_cmd_));
+    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_EFFORT, &axis_eff_cmd_));
 
     return command_interfaces;
   }
