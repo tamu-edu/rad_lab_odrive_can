@@ -8,12 +8,13 @@
 #include "odrive_can/msg/controller_status.hpp"
 #include "odrive_can/msg/o_drive_status.hpp"
 
-#include <mutex>
-#include <condition_variable>
-#include <array>
 #include <algorithm>
+#include <array>
+#include <condition_variable>
 #include <linux/can.h>
 #include <linux/can/raw.h>
+#include <mutex>
+#include <thread>
 
 namespace odrive_hardware_interface
 {
@@ -48,6 +49,7 @@ namespace odrive_hardware_interface
     uint16_t node_id_;
     SocketCanIntf can_intf_ = SocketCanIntf();
     EpollEventLoop event_loop_;
+    std::thread event_loop_thread_;
 
     void read_can_bus(const can_frame &frame);
     inline bool verify_length(const std::string &name, uint8_t expected, uint8_t length);

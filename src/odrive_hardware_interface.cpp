@@ -61,12 +61,15 @@ namespace odrive_hardware_interface
       return CallbackReturn::ERROR;
     }
 
+    event_loop_thread_ = std::thread([this]() { event_loop_.run_until_empty(); });
+
     return CallbackReturn::SUCCESS;
   }
 
   CallbackReturn ODriveHardwareInterface::on_cleanup(const rclcpp_lifecycle::State &previous_state)
   {
     can_intf_.deinit();
+    event_loop_thread_.join();
     return CallbackReturn::SUCCESS;
   }
 

@@ -41,7 +41,9 @@ ament_target_dependencies(odrive_can_node
 target_compile_features(odrive_can_node PRIVATE cxx_std_20)
 
 add_library(odrive_hardware_interface SHARED
+  src/epoll_event_loop.cpp
   src/odrive_hardware_interface.cpp
+  src/socket_can.cpp
 )
 target_include_directories(odrive_hardware_interface
   PUBLIC
