@@ -1,6 +1,19 @@
 #pragma once
 
 #include "hardware_interface/actuator_interface.hpp"
+#include <rclcpp/rclcpp.hpp>
+#include "socket_can.hpp"
+
+#include "odrive_can/msg/control_message.hpp"
+#include "odrive_can/msg/controller_status.hpp"
+#include "odrive_can/msg/o_drive_status.hpp"
+
+#include <mutex>
+#include <condition_variable>
+#include <array>
+#include <algorithm>
+#include <linux/can.h>
+#include <linux/can/raw.h>
 
 namespace odrive_hardware_interface
 {
@@ -29,8 +42,21 @@ namespace odrive_hardware_interface
 
   protected:
     // These hold the values that will actually be set/read by the controllers
-    double fake_pos_cmd_, fake_pos_state_;
-    double fake_vel_cmd_, fake_vel_state_;
-    double fake_eff_cmd_, fake_eff_state_;
+    double axis_pos_cmd_, axis_vel_cmd_, axis_eff_cmd_;
+    double axis_pos_state_, axis_vel_state_, axis_eff_state_;
+
+    uint16_t node_id_;
+    SocketCanIntf can_intf_ = SocketCanIntf();
+    EpollEventLoop event_loop_;
+
+    void read_can_bus(const can_frame &frame);
+    inline bool verify_length(const std::string &name, uint8_t expected, uint8_t length);
+
+    std::mutex ctrl_stat_mutex_;
+    odrive_can::msg::ControllerStatus ctrl_stat_ = odrive_can::msg::ControllerStatus();
+    
+    std::mutex odrv_stat_mutex_;
+    odrive_can::msg::ODriveStatus odrv_stat_ = odrive_can::msg::ODriveStatus();
+
   };
 } // namespace odrive_hardware_interface

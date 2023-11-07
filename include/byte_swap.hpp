@@ -2,6 +2,8 @@
 #define BYTE_SWAP_HPP
 
 #include  <bit>
+#include <array>
+#include <algorithm>
 
 #if !__cpp_lib_byteswap
 namespace std {

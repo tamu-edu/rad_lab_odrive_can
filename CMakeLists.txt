@@ -5,6 +5,10 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 20)
+endif()
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(hardware_interface REQUIRED)
@@ -44,6 +48,8 @@ target_include_directories(odrive_hardware_interface
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 ament_target_dependencies(odrive_hardware_interface ${THIS_PACKAGE_INCLUDE_DEPENDS} hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+rosidl_target_interfaces(odrive_hardware_interface
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
 ament_export_targets(odrive_hardware_interfaceTargets HAS_LIBRARY_TARGET)
 ament_export_dependencies(${THIS_PACKAGE_INCLUDE_DEPENDS})
