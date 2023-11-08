@@ -55,6 +55,13 @@ namespace odrive_hardware_interface
     EpollEventLoop event_loop_;
     std::thread event_loop_thread_;
 
+    EpollEvent axis_state_event_;
+    uint32_t axis_state_;
+    std::mutex axis_state_mutex_;
+    std::condition_variable fresh_heartbeat_;
+    void set_axis_state();
+    bool wait_for_axis_state_setting(uint32_t requested_state);
+
     void read_can_bus(const can_frame &frame);
     inline bool verify_length(const std::string &name, uint8_t expected, uint8_t length);
 

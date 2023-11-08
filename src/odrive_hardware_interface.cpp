@@ -131,6 +131,12 @@ namespace odrive_hardware_interface
       return CallbackReturn::ERROR;
     }
 
+    if (!axis_state_event_.init(&event_loop_, std::bind(&ODriveHardwareInterface::set_axis_state, this)))
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to initialize set axis state event");
+      return CallbackReturn::ERROR;
+    }
+
     event_loop_thread_ = std::thread([this]()
                                      { event_loop_.run_until_empty(); });
 
@@ -192,11 +198,37 @@ namespace odrive_hardware_interface
 
   CallbackReturn ODriveHardwareInterface::on_activate(const rclcpp_lifecycle::State &previous_state)
   {
+    constexpr uint32_t CLOSED_LOOP_CONTROL_STATE = 8;
+    {
+      std::unique_lock<std::mutex> guard(axis_state_mutex_);
+      axis_state_ = CLOSED_LOOP_CONTROL_STATE;
+    }
+    axis_state_event_.set();
+
+    if (!wait_for_axis_state_setting(CLOSED_LOOP_CONTROL_STATE))
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to set axis to CLOSED_LOOP_CONTROL");
+      return CallbackReturn::ERROR;
+    }
+
     return CallbackReturn::SUCCESS;
   }
 
   CallbackReturn ODriveHardwareInterface::on_deactivate(const rclcpp_lifecycle::State &previous_state)
   {
+    constexpr uint32_t IDLE_STATE = 1;
+    {
+      std::unique_lock<std::mutex> guard(axis_state_mutex_);
+      axis_state_ = IDLE_STATE;
+    }
+    axis_state_event_.set();
+
+    if (!wait_for_axis_state_setting(IDLE_STATE))
+    {
+      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to set axis to IDLE");
+      return CallbackReturn::ERROR;
+    }
+
     return CallbackReturn::SUCCESS;
   }
 
@@ -264,6 +296,7 @@ namespace odrive_hardware_interface
       ctrl_stat_.axis_state = read_le<uint8_t>(frame.data + 4);
       ctrl_stat_.procedure_result = read_le<uint8_t>(frame.data + 5);
       ctrl_stat_.trajectory_done_flag = read_le<bool>(frame.data + 6);
+      fresh_heartbeat_.notify_one();
       break;
     }
     case CmdId::kGetError:
@@ -335,6 +368,33 @@ namespace odrive_hardware_interface
     if (!valid)
       RCLCPP_WARN(rclcpp::get_logger("NODE_NAME_TODO"), "Incorrect %s frame length: %d != %d", name.c_str(), length, expected);
     return valid;
+  }
+
+  void ODriveHardwareInterface::set_axis_state()
+  {
+    struct can_frame frame;
+    frame.can_id = node_id_ << 5 | CmdId::kSetAxisState;
+    {
+      std::unique_lock<std::mutex> guard(axis_state_mutex_);
+      write_le<uint32_t>(axis_state_, frame.data);
+    }
+    frame.len = 4;
+    can_intf_.send_can_frame(frame);
+  }
+
+  bool ODriveHardwareInterface::wait_for_axis_state_setting(uint32_t requested_state)
+  {
+    std::unique_lock<std::mutex> guard(ctrl_stat_mutex_); // define lock for controller status
+    auto call_time = std::chrono::steady_clock::now();
+    fresh_heartbeat_.wait(guard, [this, &call_time]()
+                          {
+        bool complete = (this->ctrl_stat_.procedure_result != 1) && // make sure procedure_result is not busy
+            (std::chrono::steady_clock::now() - call_time >= std::chrono::seconds(1)); // wait for minimum one second 
+        return complete; }); // wait for procedure_result
+
+    // Verify the axis state is correct
+    std::lock_guard<std::mutex> lock_guard(ctrl_stat_mutex_);
+    return ctrl_stat_.axis_state == requested_state;
   }
 
 } // namespace odrive_hardware_interface
