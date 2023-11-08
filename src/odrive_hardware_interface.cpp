@@ -148,11 +148,23 @@ namespace odrive_hardware_interface
   {
     std::vector<hardware_interface::StateInterface> state_interfaces;
 
-    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_POSITION, &axis_pos_state_));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_VELOCITY, &axis_vel_state_));
-    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_EFFORT, &axis_eff_state_));
+    // Normal position, velocity, and torque states
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_POSITION, &state_pos_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_VELOCITY, &state_vel_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, hardware_interface::HW_IF_EFFORT, &state_effort_));
 
-    // TODO: add other data from odrive (voltage, temp, errors)
+    // Provide all other information we get from ODrive (voltage, errors, etc)
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "effort_target", &state_effort_target_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "bus_voltage", &state_bus_voltage_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "bus_current", &state_bus_current_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "fet_temp", &state_fet_temp_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "motor_temp", &state_motor_temp_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "disarm_reason", &state_disarm_reason_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "active_errors", &state_active_errors_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "axis_state", &state_axis_state_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "procedure_result", &state_procedure_result_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "iq_setpoint", &state_iq_setpoint_));
+    state_interfaces.emplace_back(hardware_interface::StateInterface(info_.joints.front().name, "iq_measured", &state_iq_measured_));
 
     return state_interfaces;
   }
@@ -161,9 +173,9 @@ namespace odrive_hardware_interface
   {
     std::vector<hardware_interface::CommandInterface> command_interfaces;
 
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_POSITION, &axis_pos_cmd_));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_VELOCITY, &axis_vel_cmd_));
-    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_EFFORT, &axis_eff_cmd_));
+    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_POSITION, &cmd_pos_));
+    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_VELOCITY, &cmd_vel_));
+    command_interfaces.emplace_back(hardware_interface::CommandInterface(info_.joints.front().name, hardware_interface::HW_IF_EFFORT, &cmd_effort_));
 
     return command_interfaces;
   }
@@ -200,10 +212,27 @@ namespace odrive_hardware_interface
 
   return_type ODriveHardwareInterface::read(const rclcpp::Time &time, const rclcpp::Duration &period)
   {
-    std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
-    axis_pos_state_ = ctrl_stat_.pos_estimate;
-    axis_vel_state_ = ctrl_stat_.vel_estimate;
-    axis_eff_state_ = ctrl_stat_.torque_estimate;
+    {
+      std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
+      state_pos_ = ctrl_stat_.pos_estimate;
+      state_vel_ = ctrl_stat_.vel_estimate;
+      state_effort_ = ctrl_stat_.torque_estimate;
+      state_effort_target_ = ctrl_stat_.torque_target;
+      state_axis_state_ = ctrl_stat_.axis_state;
+      state_procedure_result_ = ctrl_stat_.procedure_result;
+      state_iq_setpoint_ = ctrl_stat_.iq_setpoint;
+      state_iq_measured_ = ctrl_stat_.iq_measured;
+    }
+
+    {
+      std::lock_guard<std::mutex> guard(odrv_stat_mutex_);
+      state_bus_voltage_ = odrv_stat_.bus_voltage;
+      state_bus_current_ = odrv_stat_.bus_current;
+      state_fet_temp_ = odrv_stat_.fet_temperature;
+      state_motor_temp_ = odrv_stat_.motor_temperature;
+      state_disarm_reason_ = odrv_stat_.disarm_reason;
+      state_active_errors_ = odrv_stat_.active_errors;
+    }
 
     return return_type::OK;
   }
@@ -211,9 +240,9 @@ namespace odrive_hardware_interface
   return_type ODriveHardwareInterface::write(const rclcpp::Time &time, const rclcpp::Duration &period)
   {
     // Just set the state value to the command val for now
-    // axis_pos_state_ = axis_pos_cmd_;
-    // axis_vel_state_ = axis_vel_cmd_;
-    // axis_eff_state_ = axis_eff_cmd_;
+    // state_pos_ = cmd_pos_;
+    // state_vel_ = cmd_vel_;
+    // state_effort_ = cmd_effort_;
 
     return return_type::OK;
   }

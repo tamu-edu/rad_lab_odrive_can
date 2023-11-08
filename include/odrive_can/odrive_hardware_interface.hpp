@@ -43,8 +43,11 @@ namespace odrive_hardware_interface
 
   protected:
     // These hold the values that will actually be set/read by the controllers
-    double axis_pos_cmd_, axis_vel_cmd_, axis_eff_cmd_;
-    double axis_pos_state_, axis_vel_state_, axis_eff_state_;
+    double cmd_pos_, cmd_vel_, cmd_effort_;
+    double state_pos_, state_vel_, state_effort_, state_effort_target_;
+    double state_bus_voltage_, state_bus_current_, state_fet_temp_, state_motor_temp_, state_disarm_reason_;
+    double state_active_errors_, state_axis_state_, state_procedure_result_;
+    double state_iq_setpoint_, state_iq_measured_;
 
     uint16_t node_id_;
     std::string can_interface_name_;
