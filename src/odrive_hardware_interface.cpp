@@ -54,7 +54,7 @@ namespace odrive_hardware_interface
     // Make sure we only have one joint
     if (info_.joints.size() != 1)
     {
-      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Expected 1 joint, got: %li", info_.joints.size());
+      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Expected 1 joint, got: %zu", info_.joints.size());
       return CallbackReturn::ERROR;
     }
 
@@ -123,7 +123,7 @@ namespace odrive_hardware_interface
     return CallbackReturn::SUCCESS;
   }
 
-  CallbackReturn ODriveHardwareInterface::on_configure(const rclcpp_lifecycle::State &previous_state)
+  CallbackReturn ODriveHardwareInterface::on_configure(const rclcpp_lifecycle::State &)
   {
     if (!can_intf_.init(can_interface_name_, &event_loop_, std::bind(&ODriveHardwareInterface::read_can_bus, this, _1)))
     {
@@ -143,7 +143,7 @@ namespace odrive_hardware_interface
     return CallbackReturn::SUCCESS;
   }
 
-  CallbackReturn ODriveHardwareInterface::on_cleanup(const rclcpp_lifecycle::State &previous_state)
+  CallbackReturn ODriveHardwareInterface::on_cleanup(const rclcpp_lifecycle::State &)
   {
     can_intf_.deinit();
     event_loop_thread_.join();
@@ -186,17 +186,101 @@ namespace odrive_hardware_interface
     return command_interfaces;
   }
 
-  return_type ODriveHardwareInterface::prepare_command_mode_switch(const std::vector<std::string> &, const std::vector<std::string> &)
+  return_type ODriveHardwareInterface::prepare_command_mode_switch(const std::vector<std::string> &start_interfaces, const std::vector<std::string> &stop_interfaces)
   {
+    // Set any stopping interface to UNDEFINED control mode
+    for (auto key : stop_interfaces)
+    {
+      if (key.find(info_.joints.front().name) != std::string::npos)
+      {
+        control_mode_ = ControlMode::UNDEFINED;
+      }
+    }
+
+    // Set starting interface accordingly
+    ControlMode new_control_mode = ControlMode::UNDEFINED;
+    for (auto key : start_interfaces)
+    {
+      if (key == info_.joints.front().name + "/" + hardware_interface::HW_IF_EFFORT)
+      {
+        new_control_mode = ControlMode::TORQUE;
+      }
+      else if (key == info_.joints.front().name + "/" + hardware_interface::HW_IF_POSITION)
+      {
+        new_control_mode = ControlMode::POSITION;
+      }
+      else if (key == info_.joints.front().name + "/" + hardware_interface::HW_IF_VELOCITY)
+      {
+        new_control_mode = ControlMode::VELOCITY;
+      }
+    }
+
+    // Make sure we aren't setting a new control mode if another controller has claimed this interface already
+    if (new_control_mode != ControlMode::UNDEFINED && control_mode_ != ControlMode::UNDEFINED)
+    {
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("NODE_NAME_TODO"), "Tried to claim already claimed hardware interface");
+      return return_type::ERROR;
+    }
+
+    // Set new control mode
+    control_mode_ = new_control_mode;
+
     return return_type::OK;
   }
 
   return_type ODriveHardwareInterface::perform_command_mode_switch(const std::vector<std::string> &, const std::vector<std::string> &)
   {
+    if (control_mode_ == ControlMode::UNDEFINED)
+    {
+      // Set axis to idle? This will essentially turn off the motor
+      // TODO think about if we actually want this
+      return (on_deactivate(rclcpp_lifecycle::State()) == CallbackReturn::SUCCESS) ? return_type::OK : return_type::ERROR;
+    }
+
+    // Set axis to closed loop control mode
+    if (on_activate(rclcpp_lifecycle::State()) != CallbackReturn::SUCCESS)
+    {
+      return return_type::ERROR;
+    }
+
+    // Set axis control mode
+    write_control_mode(control_mode_);
+
+    // Pull the current values
+    float current_torque, current_vel, current_pos;
+    {
+      std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
+      current_torque = ctrl_stat_.torque_estimate;
+      current_vel = ctrl_stat_.vel_estimate;
+      current_pos = ctrl_stat_.pos_estimate;
+    }
+
+    // Write current values to motor commands (i.e. hold current position, velocity, torque)
+    // But, set all feedforward terms to 0
+    switch (control_mode_)
+    {
+    case ControlMode::TORQUE:
+      cmd_effort_ = current_torque;
+      write_command(control_mode_, current_torque, 0, 0);
+      break;
+    case ControlMode::VELOCITY:
+      cmd_vel_ = current_vel;
+      cmd_effort_ = 0;
+      write_command(control_mode_, 0, current_vel, 0);
+      break;
+    case ControlMode::POSITION:
+      cmd_pos_ = current_pos;
+      cmd_effort_ = 0;
+      cmd_vel_ = 0;
+      write_command(control_mode_, 0, 0, current_pos);
+      break;
+    default:
+      break;
+    }
     return return_type::OK;
   }
 
-  CallbackReturn ODriveHardwareInterface::on_activate(const rclcpp_lifecycle::State &previous_state)
+  CallbackReturn ODriveHardwareInterface::on_activate(const rclcpp_lifecycle::State &)
   {
     constexpr uint32_t CLOSED_LOOP_CONTROL_STATE = 8;
     {
@@ -214,7 +298,7 @@ namespace odrive_hardware_interface
     return CallbackReturn::SUCCESS;
   }
 
-  CallbackReturn ODriveHardwareInterface::on_deactivate(const rclcpp_lifecycle::State &previous_state)
+  CallbackReturn ODriveHardwareInterface::on_deactivate(const rclcpp_lifecycle::State &)
   {
     constexpr uint32_t IDLE_STATE = 1;
     {
@@ -232,22 +316,23 @@ namespace odrive_hardware_interface
     return CallbackReturn::SUCCESS;
   }
 
-  CallbackReturn ODriveHardwareInterface::on_shutdown(const rclcpp_lifecycle::State &previous_state)
+  CallbackReturn ODriveHardwareInterface::on_shutdown(const rclcpp_lifecycle::State &)
   {
     return CallbackReturn::SUCCESS;
   }
 
-  CallbackReturn ODriveHardwareInterface::on_error(const rclcpp_lifecycle::State &previous_state)
+  CallbackReturn ODriveHardwareInterface::on_error(const rclcpp_lifecycle::State &)
   {
     return CallbackReturn::SUCCESS;
   }
 
-  return_type ODriveHardwareInterface::read(const rclcpp::Time &time, const rclcpp::Duration &period)
+  return_type ODriveHardwareInterface::read(const rclcpp::Time &, const rclcpp::Duration &)
   {
     {
       std::lock_guard<std::mutex> guard(ctrl_stat_mutex_);
-      state_pos_ = ctrl_stat_.pos_estimate;
-      state_vel_ = ctrl_stat_.vel_estimate;
+      // Position/velocity come from ODrive in turns, convert to radians
+      state_pos_ = ctrl_stat_.pos_estimate * 2 * M_PI;
+      state_vel_ = ctrl_stat_.vel_estimate * 2 * M_PI;
       state_effort_ = ctrl_stat_.torque_estimate;
       state_effort_target_ = ctrl_stat_.torque_target;
       state_axis_state_ = ctrl_stat_.axis_state;
@@ -269,12 +354,10 @@ namespace odrive_hardware_interface
     return return_type::OK;
   }
 
-  return_type ODriveHardwareInterface::write(const rclcpp::Time &time, const rclcpp::Duration &period)
+  return_type ODriveHardwareInterface::write(const rclcpp::Time &, const rclcpp::Duration &)
   {
-    // Just set the state value to the command val for now
-    // state_pos_ = cmd_pos_;
-    // state_vel_ = cmd_vel_;
-    // state_effort_ = cmd_effort_;
+    // All position/velocity commands go to the ODrive in turns instead of radians
+    write_command(control_mode_, cmd_effort_, cmd_vel_ / 2 / M_PI, cmd_pos_ / 2 / M_PI);
 
     return return_type::OK;
   }
@@ -395,6 +478,56 @@ namespace odrive_hardware_interface
     // Verify the axis state is correct
     std::lock_guard<std::mutex> lock_guard(ctrl_stat_mutex_);
     return ctrl_stat_.axis_state == requested_state;
+  }
+
+  void ODriveHardwareInterface::write_control_mode(ControlMode mode)
+  {
+    if (mode == ControlMode::UNDEFINED)
+    {
+      return;
+    }
+
+    struct can_frame frame = can_frame{};
+    frame.can_id = node_id_ << 5 | kSetControllerMode;
+    write_le<uint32_t>(mode, frame.data);
+    write_le<uint32_t>(1, frame.data + 4); // Passthrough input
+    frame.len = 8;
+    can_intf_.send_can_frame(frame);
+  }
+
+  void ODriveHardwareInterface::write_command(ControlMode mode, const float &cmd_torque, const float &cmd_velocity, const float &cmd_position)
+  {
+    if (mode == ControlMode::UNDEFINED)
+    {
+      return;
+    }
+
+    struct can_frame frame = can_frame{};
+    switch (mode)
+    {
+    case ControlMode::TORQUE:
+      frame.can_id = node_id_ << 5 | kSetInputTorque;
+      write_le<float>(cmd_torque, frame.data);
+      frame.len = 4;
+      break;
+    case ControlMode::VELOCITY:
+      frame.can_id = node_id_ << 5 | kSetInputVel;
+      write_le<float>(cmd_velocity, frame.data);
+      write_le<float>(cmd_torque, frame.data + 4);
+      frame.len = 8;
+      break;
+    case ControlMode::POSITION:
+      frame.can_id = node_id_ << 5 | kSetInputPos;
+      write_le<float>(cmd_position, frame.data);
+      write_le<int8_t>(((int8_t)((cmd_velocity) * 1000)), frame.data + 4);
+      write_le<int8_t>(((int8_t)((cmd_torque) * 1000)), frame.data + 6);
+      frame.len = 8;
+      break;
+    default:
+      return;
+    }
+
+    can_intf_.send_can_frame(frame);
   }
 
 } // namespace odrive_hardware_interface

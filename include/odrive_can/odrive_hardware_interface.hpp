@@ -24,22 +24,22 @@ namespace odrive_hardware_interface
     // ODriveHardwareInterface();
 
     hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo &hardware_info);
-    hardware_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State &previous_state) override;
-    hardware_interface::CallbackReturn on_cleanup(const rclcpp_lifecycle::State &previous_state) override;
+    hardware_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State &) override;
+    hardware_interface::CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override;
 
     std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
     std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
 
-    hardware_interface::return_type prepare_command_mode_switch(const std::vector<std::string> &, const std::vector<std::string> &) override;
+    hardware_interface::return_type prepare_command_mode_switch(const std::vector<std::string> &start_interfaces, const std::vector<std::string> &stop_interfaces) override;
     hardware_interface::return_type perform_command_mode_switch(const std::vector<std::string> &, const std::vector<std::string> &) override;
 
-    hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State &previous_state) override;
-    hardware_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
-    hardware_interface::CallbackReturn on_shutdown(const rclcpp_lifecycle::State &previous_state) override;
-    hardware_interface::CallbackReturn on_error(const rclcpp_lifecycle::State &previous_state) override;
+    hardware_interface::CallbackReturn on_activate(const rclcpp_lifecycle::State &) override;
+    hardware_interface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override;
+    hardware_interface::CallbackReturn on_shutdown(const rclcpp_lifecycle::State &) override;
+    hardware_interface::CallbackReturn on_error(const rclcpp_lifecycle::State &) override;
 
-    hardware_interface::return_type read(const rclcpp::Time &time, const rclcpp::Duration &period) override;
-    hardware_interface::return_type write(const rclcpp::Time &time, const rclcpp::Duration &period) override;
+    hardware_interface::return_type read(const rclcpp::Time &, const rclcpp::Duration &) override;
+    hardware_interface::return_type write(const rclcpp::Time &, const rclcpp::Duration &) override;
 
   protected:
     // These hold the values that will actually be set/read by the controllers
@@ -67,9 +67,24 @@ namespace odrive_hardware_interface
 
     std::mutex ctrl_stat_mutex_;
     odrive_can::msg::ControllerStatus ctrl_stat_ = odrive_can::msg::ControllerStatus();
-    
+
     std::mutex odrv_stat_mutex_;
     odrive_can::msg::ODriveStatus odrv_stat_ = odrive_can::msg::ODriveStatus();
 
+    enum ControlMode : std::uint8_t
+    {
+      UNDEFINED = 0,
+      TORQUE = 1,
+      VELOCITY = 2,
+      POSITION = 3
+    };
+
+    ControlMode control_mode_ = ControlMode::UNDEFINED;
+
+    // The ControlMode enum here matches the ODrive firmware control mode enum
+    void write_control_mode(ControlMode mode);
+
+    // The passed values must be in ODrive units (i.e. turns instead of radians)
+    void write_command(ControlMode mode, const float &cmd_torque, const float &cmd_velocity, const float &cmd_position);
   };
 } // namespace odrive_hardware_interface
