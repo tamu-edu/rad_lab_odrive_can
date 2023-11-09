@@ -62,7 +62,7 @@ namespace odrive_hardware_interface
     // Make sure we only have one joint
     if (info_.joints.size() != 1)
     {
-      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Expected 1 joint, got: %zu", info_.joints.size());
+      RCLCPP_ERROR(rclcpp::get_logger("ODriveHardwareInterface"), "Expected 1 joint, got: %zu", info_.joints.size());
       return CallbackReturn::ERROR;
     }
 
@@ -124,7 +124,7 @@ namespace odrive_hardware_interface
 
     if (missing_interface)
     {
-      RCLCPP_ERROR_STREAM(rclcpp::get_logger("NODE_NAME_TODO"), warning_msg);
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("ODriveHardwareInterface"), warning_msg);
       return CallbackReturn::ERROR;
     }
 
@@ -135,13 +135,13 @@ namespace odrive_hardware_interface
   {
     if (!can_intf_.init(can_interface_name_, &event_loop_, std::bind(&ODriveHardwareInterface::read_can_bus, this, _1)))
     {
-      RCLCPP_ERROR_STREAM(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to initialize socket can interface: " << can_interface_name_);
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("ODriveHardwareInterface"), "Failed to initialize socket can interface: " << can_interface_name_);
       return CallbackReturn::ERROR;
     }
 
     if (!axis_state_event_.init(&event_loop_, std::bind(&ODriveHardwareInterface::set_axis_state, this)))
     {
-      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to initialize set axis state event");
+      RCLCPP_ERROR(rclcpp::get_logger("ODriveHardwareInterface"), "Failed to initialize set axis state event");
       return CallbackReturn::ERROR;
     }
 
@@ -230,7 +230,7 @@ namespace odrive_hardware_interface
     // Make sure we aren't setting a new control mode if another controller has claimed this interface already
     if (new_control_mode != ControlMode::UNDEFINED && control_mode_ != ControlMode::UNDEFINED)
     {
-      RCLCPP_ERROR_STREAM(rclcpp::get_logger("NODE_NAME_TODO"), "Tried to claim already claimed hardware interface");
+      RCLCPP_ERROR_STREAM(rclcpp::get_logger("ODriveHardwareInterface"), "Tried to claim already claimed hardware interface");
       return return_type::ERROR;
     }
 
@@ -303,7 +303,7 @@ namespace odrive_hardware_interface
 
     if (!wait_for_axis_state_setting(CLOSED_LOOP_CONTROL_STATE))
     {
-      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to set axis to CLOSED_LOOP_CONTROL");
+      RCLCPP_ERROR(rclcpp::get_logger("ODriveHardwareInterface"), "Failed to set axis to CLOSED_LOOP_CONTROL");
       return CallbackReturn::ERROR;
     }
 
@@ -321,7 +321,7 @@ namespace odrive_hardware_interface
 
     if (!wait_for_axis_state_setting(IDLE_STATE))
     {
-      RCLCPP_ERROR(rclcpp::get_logger("NODE_NAME_TODO"), "Failed to set axis to IDLE");
+      RCLCPP_ERROR(rclcpp::get_logger("ODriveHardwareInterface"), "Failed to set axis to IDLE");
       return CallbackReturn::ERROR;
     }
 
@@ -450,7 +450,7 @@ namespace odrive_hardware_interface
     }
     default:
     {
-      RCLCPP_WARN(rclcpp::get_logger("NODE_NAME_TODO"), "Received unused message: ID = 0x%x", (frame.can_id & 0x1F));
+      RCLCPP_WARN(rclcpp::get_logger("ODriveHardwareInterface"), "Received unused message: ID = 0x%x", (frame.can_id & 0x1F));
       break;
     }
     }
@@ -459,9 +459,9 @@ namespace odrive_hardware_interface
   inline bool ODriveHardwareInterface::verify_length(const std::string &name, uint8_t expected, uint8_t length)
   {
     bool valid = expected == length;
-    RCLCPP_DEBUG(rclcpp::get_logger("NODE_NAME_TODO"), "received %s", name.c_str());
+    RCLCPP_DEBUG(rclcpp::get_logger("ODriveHardwareInterface"), "received %s", name.c_str());
     if (!valid)
-      RCLCPP_WARN(rclcpp::get_logger("NODE_NAME_TODO"), "Incorrect %s frame length: %d != %d", name.c_str(), length, expected);
+      RCLCPP_WARN(rclcpp::get_logger("ODriveHardwareInterface"), "Incorrect %s frame length: %d != %d", name.c_str(), length, expected);
     return valid;
   }
 
