@@ -2,6 +2,7 @@
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "odrive_can/odrive_hardware_interface.hpp"
 #include "pluginlib/class_list_macros.hpp"
+#include <chrono>
 
 using hardware_interface::CallbackReturn;
 using hardware_interface::return_type;
@@ -11,6 +12,7 @@ using ControllerStatus = odrive_can::msg::ControllerStatus;
 using ControlMessage = odrive_can::msg::ControlMessage;
 
 using std::placeholders::_1;
+using namespace std::chrono_literals;
 
 enum CmdId : uint32_t
 {
@@ -38,6 +40,12 @@ enum ControlMode : uint64_t
 
 namespace odrive_hardware_interface
 {
+  ODriveHardwareInterface::~ODriveHardwareInterface()
+  {
+    on_deactivate(rclcpp_lifecycle::State());
+    on_cleanup(rclcpp_lifecycle::State());
+  }
+
   CallbackReturn ODriveHardwareInterface::on_init(const hardware_interface::HardwareInfo &hardware_info)
   {
     // Call parent's init
@@ -145,8 +153,12 @@ namespace odrive_hardware_interface
 
   CallbackReturn ODriveHardwareInterface::on_cleanup(const rclcpp_lifecycle::State &)
   {
+    axis_state_event_.deinit();
     can_intf_.deinit();
-    event_loop_thread_.join();
+    if (event_loop_thread_.joinable())
+    {
+      event_loop_thread_.join();
+    }
     return CallbackReturn::SUCCESS;
   }
 
@@ -468,16 +480,7 @@ namespace odrive_hardware_interface
   bool ODriveHardwareInterface::wait_for_axis_state_setting(uint32_t requested_state)
   {
     std::unique_lock<std::mutex> guard(ctrl_stat_mutex_); // define lock for controller status
-    auto call_time = std::chrono::steady_clock::now();
-    fresh_heartbeat_.wait(guard, [this, &call_time]()
-                          {
-        bool complete = (this->ctrl_stat_.procedure_result != 1) && // make sure procedure_result is not busy
-            (std::chrono::steady_clock::now() - call_time >= std::chrono::seconds(1)); // wait for minimum one second 
-        return complete; }); // wait for procedure_result
-
-    // Verify the axis state is correct
-    std::lock_guard<std::mutex> lock_guard(ctrl_stat_mutex_);
-    return ctrl_stat_.axis_state == requested_state;
+    return fresh_heartbeat_.wait_for(guard, 100ms, [this, &requested_state](){return ctrl_stat_.axis_state == requested_state;});
   }
 
   void ODriveHardwareInterface::write_control_mode(ControlMode mode)

@@ -22,6 +22,7 @@ namespace odrive_hardware_interface
   {
   public:
     // ODriveHardwareInterface();
+    ~ODriveHardwareInterface();
 
     hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo &hardware_info);
     hardware_interface::CallbackReturn on_configure(const rclcpp_lifecycle::State &) override;
